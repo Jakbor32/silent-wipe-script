@@ -82,7 +82,7 @@ function Write-Log($msg, [switch]$ErrorLog) {
 
 # ================= CONNECTIONS =====================
 try {
-    Connect-MgGraph -Scopes "AuditLog.Read.All", "User.Read.All"
+    Connect-MgGraph -Scopes User.ReadWrite.all
     Write-Log "Connected to Microsoft Graph"
 }
 catch {
@@ -99,28 +99,42 @@ catch {
 
 
 # ================= HANDLING DELETE STATUS ======================
-$existingUsers = Get-PnPListItem -List "Users" -Fields "email", "status", "Modified"
 foreach ($userItem in $existingUsers) {
     $email = $userItem["email"]
     $status = $userItem["status"]
 
-    if ($status -eq "delete") {
+    if ([string]::IsNullOrEmpty($email) -or [string]::IsNullOrEmpty($status)) { continue }
+
+    $statusLower = $status.ToLower()
+
+    if ($statusLower -eq "delete") {
         try {
+            $processed = $false
+
             # Attempting through AD
             try {
                 $adUser = Get-ADUser -Filter { Mail -eq $email } -ErrorAction Stop
                 Disable-ADAccount -Identity $adUser -ErrorAction Stop
-                $newName = "###_AutoWipe_$($adUser.SamAccountName)"
+
+                $prefix = "###_AutoWipe"
+                $newName = "${prefix}_$($adUser.SamAccountName)"
+                $displayName = "$prefix`_$($adUser.GivenName) $($adUser.Surname)"
+
                 Rename-ADObject -Identity $adUser.DistinguishedName -NewName $newName -ErrorAction Stop
-                Write-Log "User $email disabled and renamed in AD to $newName"
+                Set-ADUser -Identity $adUser.DistinguishedName -DisplayName $displayName
+
+                Write-Log "User $email disabled, renamed in AD to $newName, and DisplayName set to '$displayName'"
+                $processed = $true
             }
             catch {
                 Write-Log "Failed to process in AD ($email), trying through Graph: $_" -ErrorLog
+
                 try {
                     $mgUser = Get-MgUser -Filter "mail eq '$email'"
                     if ($mgUser) {
                         Update-MgUser -UserId $mgUser.Id -AccountEnabled:$false -DisplayName "###_AutoWipe_$($mgUser.DisplayName)"
                         Write-Log "User $email disabled and renamed through Graph"
+                        $processed = $true
                     }
                     else {
                         Write-Log "Failed to find user $email in Graph" -ErrorLog
@@ -130,12 +144,17 @@ foreach ($userItem in $existingUsers) {
                     Write-Log "Error disabling in Graph for $email - $_" -ErrorLog
                 }
             }
+
+            # Remove user from SharePoint if processed successfully
+            if ($processed) {
+                Remove-UserFromSharePointList -email $email
+            }
         }
         catch {
             Write-Log "Failed to process delete status for $email - $_" -ErrorLog
         }
     }
-    elseif ($status -in @("awaiting approval", "pending")) {
+    elseif ($statusLower -in @("awaiting approval", "pending")) {
         try {
             Remove-PnPListItem -List "Users" -Identity $userItem.Id -Force
             Write-Log "Removed record $email with status $status from SharePoint"
@@ -162,9 +181,15 @@ $newInactiveCount = 0
 foreach ($user in $users) {
     $mail = $user.Mail
     $upn = $user.UserPrincipalName
+    $isEnabled = $user.AccountEnabled
 
     if ([string]::IsNullOrEmpty($mail)) { continue }
     if (-not $mail.ToLower().EndsWith("yourdomain.com")) { continue }
+
+    if (-not $isEnabled) {
+        Write-Log "Skipping disabled user: $mail"
+        continue
+    }
 
     $mailLower = $mail.ToLower()
 
@@ -174,6 +199,8 @@ foreach ($user in $users) {
     }
 
     # Check if already on the list
+
+    $existingUsers = Get-PnPListItem -List "Users" -Fields "email", "status", "Modified"
     $existingItem = $existingUsers | Where-Object { $_["email"].ToLower() -eq $mailLower }
     if ($existingItem) {
         Write-Log "User already exists on the Users list: $mailLower"
