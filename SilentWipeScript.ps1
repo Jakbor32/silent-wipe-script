@@ -30,7 +30,7 @@ Import-Module PnP.PowerShell
 
 
 # ================= MODULE CHECK =====================
-$requiredModules = @("ActiveDirectory", "Microsoft.Graph", "PnP.PowerShell")
+$requiredModules = @("ActiveDirectory")
 
 foreach ($m in $requiredModules) {
     if (-not (Get-Module -ListAvailable -Name $m)) {
@@ -47,42 +47,57 @@ foreach ($m in $requiredModules) {
     }
 }
 
+# ================= FIX PnP/Graph Conflict =====================
+try {
+    $pnpModule = Get-Module -ListAvailable PnP.PowerShell | Select-Object -First 1
+    if ($pnpModule) {
+        $badDll = Join-Path $pnpModule.ModuleBase 'Core\Microsoft.Graph.Core.dll'
+        if (Test-Path $badDll) {
+            Remove-Item -Path $badDll -Force
+            Write-Host "Removed conflicting DLL: $badDll" -ForegroundColor Yellow
+        }
+    }
+}
+catch {
+    Write-Host "Failed to check/remove old Graph DLL: $_" -ForegroundColor Red
+}
+# =============================================================
+
+
 # ================= PREVENT SLEEP =====================
 Add-Type -Namespace WinAPI -Name PowerControl -MemberDefinition @"
   [DllImport("kernel32.dll")]
   public static extern uint SetThreadExecutionState(uint esFlags);
 "@
 
-$ES_CONTINUOUS = [System.UInt32]::Parse("80000000", 'HexNumber')
-$ES_SYSTEM_REQUIRED = [System.UInt32]::Parse("00000001", 'HexNumber')
+$ES_CONTINUOUS       = [System.UInt32]::Parse("80000000", 'HexNumber')
+$ES_SYSTEM_REQUIRED  = [System.UInt32]::Parse("00000001", 'HexNumber')
 $ES_DISPLAY_REQUIRED = [System.UInt32]::Parse("00000002", 'HexNumber')
 
 $flags = $ES_CONTINUOUS -bor $ES_SYSTEM_REQUIRED -bor $ES_DISPLAY_REQUIRED
 [WinAPI.PowerControl]::SetThreadExecutionState($flags)
 
 # ================= PARAMETERS =====================
-# Replace placeholders (your_cert_thumbprint_here, your_tenant_id_here, etc.) with actual values before running
 $certThumbprint = "your_cert_thumbprint_here"
-$tenantId = "your_tenant_id_here"
-$clientId = "your_client_id_here"
-$siteUrl = "https://yourtenant.sharepoint.com/sites/your-site"
-$daysInactive = 30
-$logPath = "C:\SilentWipeScript\log.txt"
+$tenantId       = "your_tenant_id_here"
+$clientId       = "your_client_id_here"
+$siteUrl        = "https://yourtenant.sharepoint.com/sites/your-site"
+$daysInactive   = 30
+$logPath        = "C:\SilentWipeScript\log.txt"
 
-# Clearing the local log
 if (Test-Path $logPath) { Clear-Content -Path $logPath }
 else { New-Item -ItemType File -Path $logPath -Force | Out-Null }
 
 function Write-Log($msg, [switch]$ErrorLog) {
     $prefix = if ($ErrorLog) { "### ERROR ###" } else { "INFO" }
-    $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $prefix - $msg"
+    $line   = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $prefix - $msg"
     Add-Content -Path $logPath -Value $line
     Write-Host $line
 }
 
 # ================= CONNECTIONS =====================
 try {
-    Connect-MgGraph -Scopes User.ReadWrite.all
+    Connect-MgGraph -Scopes "User.ReadWrite.All"
     Write-Log "Connected to Microsoft Graph"
 }
 catch {
@@ -90,6 +105,7 @@ catch {
 }
 
 try {
+    Import-Module PnP.PowerShell -ErrorAction Stop
     Connect-PnPOnline -ClientId $clientId -Url $siteUrl -Tenant $tenantId -Thumbprint $certThumbprint
     Write-Log "Connected to SharePoint"
 }
@@ -97,10 +113,9 @@ catch {
     Write-Log "Failed to connect to SharePoint: $_" -ErrorLog
 }
 
-
 # ================= HANDLING DELETE STATUS ======================
 foreach ($userItem in $existingUsers) {
-    $email = $userItem["email"]
+    $email  = $userItem["email"]
     $status = $userItem["status"]
 
     if ([string]::IsNullOrEmpty($email) -or [string]::IsNullOrEmpty($status)) { continue }
@@ -116,8 +131,8 @@ foreach ($userItem in $existingUsers) {
                 $adUser = Get-ADUser -Filter { Mail -eq $email } -ErrorAction Stop
                 Disable-ADAccount -Identity $adUser -ErrorAction Stop
 
-                $prefix = "###_AutoWipe"
-                $newName = "${prefix}_$($adUser.SamAccountName)"
+                $prefix      = "###_AutoWipe"
+                $newName     = "${prefix}_$($adUser.SamAccountName)"
                 $displayName = "$prefix`_$($adUser.GivenName) $($adUser.Surname)"
 
                 Rename-ADObject -Identity $adUser.DistinguishedName -NewName $newName -ErrorAction Stop
@@ -179,8 +194,8 @@ $users = Get-MgUser -All -Property AccountEnabled, Mail, UserPrincipalName
 $newInactiveCount = 0
 
 foreach ($user in $users) {
-    $mail = $user.Mail
-    $upn = $user.UserPrincipalName
+    $mail      = $user.Mail
+    $upn       = $user.UserPrincipalName
     $isEnabled = $user.AccountEnabled
 
     if ([string]::IsNullOrEmpty($mail)) { continue }
@@ -199,9 +214,8 @@ foreach ($user in $users) {
     }
 
     # Check if already on the list
-
     $existingUsers = Get-PnPListItem -List "Users" -Fields "email", "status", "Modified"
-    $existingItem = $existingUsers | Where-Object { $_["email"].ToLower() -eq $mailLower }
+    $existingItem  = $existingUsers | Where-Object { $_["email"].ToLower() -eq $mailLower }
     if ($existingItem) {
         Write-Log "User already exists on the Users list: $mailLower"
         continue
@@ -242,11 +256,21 @@ foreach ($user in $users) {
 
 # ============ FINAL LOGGING =====================
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-$logEntry = @{ "log" = "$timestamp - Checked users. Inactive: $newInactiveCount" }
+$logEntry  = @{ "log" = "$timestamp - Checked users. Inactive: $newInactiveCount" }
 try {
     Add-PnPListItem -List "Logs" -Values $logEntry
     Write-Log "Log saved to SharePoint: $($logEntry["log"])"
 }
 catch {
     Write-Log "Error saving final log: $_" -ErrorLog
+}
+
+# ============ DISCONNECT =====================
+try {
+    Disconnect-MgGraph
+    Disconnect-PnPOnline
+    Write-Log "Disconnected sessions"
+}
+catch {
+    Write-Log "Error disconnecting sessions: $_" -ErrorLog
 }
