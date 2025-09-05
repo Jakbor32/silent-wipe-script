@@ -35,6 +35,14 @@ In this way, SilentWipeScript integrates multiple systems into a single, automat
 
 
 
+# NAS Configuration
+Below you will find step-by-step instructions for configuring backup on NAS. NAS is used for the security of mailboxes in case they are deleted, so that we are able to restore the mail of such a person. 
+
+[Go to NAS configuration](NAS/README.md)
+
+*Remember to make sure beforehand that the Azure group has been created so that it can be selected.*
+
+---
 ### Plan
 1. ~~Description of what it is used for + presentation of how it works~~
 2. Powershell script configuration + task scheduler
@@ -43,6 +51,6 @@ In this way, SilentWipeScript integrates multiple systems into a single, automat
 5. Active Directory - connection with Powershell
 6. Logs – log descriptions
 7. Power Automate – connection to SharePoint + Azure
-8. NAS backup – configuration of automatic backup for users in the group
+8. ~~NAS backup – configuration of automatic backup for users in the group~~
 9. Azure - creating a group + registering a SharePoint application for PowerShell
 10. Possible paths for further development
