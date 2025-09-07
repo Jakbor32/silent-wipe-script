@@ -33,6 +33,14 @@ In this way, SilentWipeScript integrates multiple systems into a single, automat
    - Deletes outdated entries from SharePoint
 6. Saves logs both locally and in SharePoint for reporting and auditing.
 
+# Azure Configuration
+
+Below you will find step-by-step instructions for creating a certificate, registering an application in Microsoft Entra ID, and assigning the required Microsoft Graph and SharePoint permissions. This is necessary for the script to perform tasks using Graph and change, delete, or create something on SharePoint.
+
+[Go to Azure configuration](Azure/README.md)
+
+_Remember to copy from this guide the **tenant ID**, **client ID**, and **certificate thumbprint** for proper connection to PowerShell._
+
 # NAS Configuration
 
 Below you will find step-by-step instructions for configuring backup on NAS. NAS is used for the security of mailboxes in case they are deleted, so that we are able to restore the mail of such a person.
@@ -41,21 +49,19 @@ Below you will find step-by-step instructions for configuring backup on NAS. NAS
 
 _Remember to make sure beforehand that the Azure group has been created so that it can be selected._
 
-# Azure Configuration
+# Microsoft Graph Configuration
 
-Below you will find step-by-step instructions for creating a certificate, registering an application in Microsoft Entra ID, and assigning the required Microsoft Graph and SharePoint permissions. This is necessary for the script to perform tasks using Graph and change, delete, or create something on SharePoint.
+To enable SilentWipeScript to interact with Microsoft 365 accounts, you need to configure the Microsoft Graph PowerShell module. This allows the script to retrieve user login data and manage accounts securely.
 
-[Go to Azure configuration](Azure/README.md)
-
-_Remember to copy the **tenant ID**, **client ID**, and **certificate thumbprint** for proper connection to PowerShell._
+[Go to Graph configuration](Graph/README.md)
 
 ---
 
 ### Plan
 
 1. ~~Description of what it is used for + presentation of how it works~~
-2. Powershell script configuration + task scheduler
-3. Microsoft Graph - connection with Powershell
+2. Powershell, script configuration + task scheduler
+3. ~~Microsoft Graph - connection with Powershell~~
 4. Sharepoint site and list configuration + connection with Powershell
 5. Active Directory - connection with Powershell
 6. Logs – log descriptions
