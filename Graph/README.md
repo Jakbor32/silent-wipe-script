@@ -4,7 +4,7 @@
 
 - PowerShell 7.2 or later
 - Admin privileges to install modules
-- Certificate-based authentication set up in Azure (see [Azure/README.md](../Azure/README.md))
+- Certificate-based authentication set up in Azure (see [Azure/README.md](../Azure/README.md#5-generate-a-certificate))
 
 ## Installation
 
