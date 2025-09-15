@@ -28,7 +28,6 @@ Import-Module PnP.PowerShell
 ===================================================
 #>
 
-
 # ================= MODULE CHECK =====================
 $requiredModules = @("ActiveDirectory")
 
@@ -61,8 +60,6 @@ try {
 catch {
     Write-Host "Failed to check/remove old Graph DLL: $_" -ForegroundColor Red
 }
-# =============================================================
-
 
 # ================= PREVENT SLEEP =====================
 Add-Type -Namespace WinAPI -Name PowerControl -MemberDefinition @"
@@ -78,13 +75,13 @@ $flags = $ES_CONTINUOUS -bor $ES_SYSTEM_REQUIRED -bor $ES_DISPLAY_REQUIRED
 [WinAPI.PowerControl]::SetThreadExecutionState($flags)
 
 # ================= PARAMETERS =====================
+# Replace placeholders (your_cert_thumbprint_here, your_tenant_id_here, etc.) with actual values before running
 $certThumbprint = "your_cert_thumbprint_here"
 $tenantId = "your_tenant_id_here"
 $clientId = "your_client_id_here"
 $siteUrl = "https://yourtenant.sharepoint.com/sites/your-site"
 $daysInactive = 30
 $logPath = "C:\SilentWipeScript\log.txt"
-
 
 # Clearing the local log
 if (Test-Path $logPath) { Clear-Content -Path $logPath }
@@ -98,7 +95,8 @@ function Write-Log($msg, [switch]$ErrorLog) {
 }
 
 # ================= CONNECTIONS =====================
-try {
+try
+ {
     Connect-MgGraph -ClientId $clientId -TenantId $tenantId -CertificateThumbprint $certThumbprint
 
     Write-Log "Connected to Microsoft Graph using certificate"
@@ -114,6 +112,7 @@ try {
 catch {
     Write-Log "Failed to connect to SharePoint: $_" -ErrorLog
 }
+
 ## ====================== USER REMOVAL - sharepoint ==============================
 function Remove-UserFromSharePointList {
     param (
@@ -135,7 +134,10 @@ function Remove-UserFromSharePointList {
     }
 }
 
+
 # ================= HANDLING DELETE STATUS ======================
+$existingUsers = Get-PnPListItem -List "Users" -Fields "email", "status"
+
 foreach ($userItem in $existingUsers) {
     $email = $userItem["email"]
     $status = $userItem["status"]
@@ -151,8 +153,10 @@ foreach ($userItem in $existingUsers) {
             # Attempting through AD
             try {
                 $adUser = Get-ADUser -Filter { Mail -eq $email } -ErrorAction Stop
+                Write-Log "Found AD user: $($adUser.SamAccountName)"
                 Disable-ADAccount -Identity $adUser -ErrorAction Stop
-
+                Write-Log "Disabled AD user $email"
+                
                 $prefix = "###_AutoWipe"
                 $newName = "${prefix}_$($adUser.SamAccountName)"
                 $displayName = "$prefix`_$($adUser.GivenName) $($adUser.Surname)"
@@ -169,9 +173,10 @@ foreach ($userItem in $existingUsers) {
                 try {
                     $mgUser = Get-MgUser -Filter "mail eq '$email'"
                     if ($mgUser) {
-                        Update-MgUser -UserId $mgUser.Id -AccountEnabled:$false -DisplayName "###_AutoWipe_$($mgUser.DisplayName)"
+                        Update-MgUser -UserId $mgUser.Id -AccountEnabled:$false -DisplayName ("###_AutoWipe_" + ($mgUser.DisplayName -replace "^(###_AutoWipe_)+", ""))
                         Write-Log "User $email disabled and renamed through Graph"
                         $processed = $true
+
                     }
                     else {
                         Write-Log "Failed to find user $email in Graph" -ErrorLog
@@ -204,7 +209,13 @@ foreach ($userItem in $existingUsers) {
 
 # ================= WHITELIST =====================
 $whitelist = @()
-$whitelistItems = Get-PnPListItem -List "Whitelist" -Fields "email" -PageSize 1000
+try {
+    $whitelistItems = Get-PnPListItem -List "Whitelist" -Fields "email" -PageSize 1000
+}
+catch {
+    Write-Log "Failed to load whitelist from SharePoint: $_" -ErrorLog
+    $whitelistItems = @()
+}
 foreach ($item in $whitelistItems) {
     $mail = $item["email"]
     if ($mail) { $whitelist += $mail.ToLower().Trim() }
@@ -215,13 +226,14 @@ Write-Log "Loaded whitelist from SharePoint ($($whitelist.Count) records)"
 $users = Get-MgUser -All -Property AccountEnabled, Mail, UserPrincipalName
 $newInactiveCount = 0
 
+
 foreach ($user in $users) {
     $mail = $user.Mail
     $upn = $user.UserPrincipalName
     $isEnabled = $user.AccountEnabled
 
     if ([string]::IsNullOrEmpty($mail)) { continue }
-    if (-not $mail.ToLower().EndsWith("yourdomain.com")) { continue }
+    if (-not $mail.ToLower().EndsWith("your-domain.com")) { continue }
 
     if (-not $isEnabled) {
         Write-Log "Skipping disabled user: $mail"
@@ -235,15 +247,14 @@ foreach ($user in $users) {
         continue
     }
 
-    # Check if already on the list
-    $existingUsers = Get-PnPListItem -List "Users" -Fields "email", "status", "Modified"
-    $existingItem = $existingUsers | Where-Object { $_["email"].ToLower() -eq $mailLower }
+    # Check if user is already on the SharePoint 'Users' list
+    $existingItem = $existingUsers | Where-Object { $_["email"].ToLower() -eq $mailLower } | Select-Object -First 1
     if ($existingItem) {
         Write-Log "User already exists on the Users list: $mailLower"
         continue
     }
 
-    # Logins
+    # Logins check
     try {
         $signIns = Get-MgAuditLogSignIn -Filter "userPrincipalName eq '$upn'" -Top 10 -ErrorAction Stop
     }
@@ -275,6 +286,7 @@ foreach ($user in $users) {
         Write-Log "Active: $mailLower"
     }
 }
+
 
 # ============ FINAL LOGGING =====================
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
