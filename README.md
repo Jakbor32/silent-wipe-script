@@ -55,12 +55,17 @@ To enable SilentWipeScript to interact with Microsoft 365 accounts, you need to 
 
 [Go to Graph configuration](Graph/README.md)
 
----
+
+# PowerShell Script Configuration and Task Scheduler Setup
+
+PowerShell 7 is used as the core automation engine for this project. It integrates with Active Directory, Microsoft Graph, and SharePoint Online to manage inactive users, retrieve login data, and update SharePoint lists. It also enables scheduled cleanups via Task Scheduler, handling both on-prem and cloud operations in one script.
+
+[Got to Powershell configuration](Powershell/README.md)
 
 ### Plan
 
 1. ~~Description of what it is used for + presentation of how it works~~
-2. Powershell, script configuration + task scheduler
+2. ~~Powershell, script configuration + task scheduler~~
 3. ~~Microsoft Graph - connection with Powershell~~
 4. Sharepoint site and list configuration + connection with Powershell
 5. Active Directory - connection with Powershell
