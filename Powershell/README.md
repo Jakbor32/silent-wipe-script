@@ -64,7 +64,7 @@ You can also run the script by right-clicking the `.ps1` file and selecting:
  To run the script automatically, you need to create a scheduled task using the snippet below:
  ```powershell
  # Path to the main script
-$scriptPath = "your_path_to\SilentWipeScript.ps1"
+$scriptPath = "your_path_to\SilentWipeLauncher.ps1"
 
 # Get path to pwsh.exe
 $pwshPath = (Get-Command pwsh).Source
