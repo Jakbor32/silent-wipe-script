@@ -67,7 +67,7 @@ SilentWipeScript integrates with on-premises Active Directory using the ActiveDi
 
 [Go to Active Directory configuration](<Active Directory/README.md>)
 
-# SharePoint
+# SharePoint Configuration
 
 In this project, SharePoint serves as a central platform for storing and managing lists of inactive accounts, logs, and workflow data. This allows both IT and HR departments to easily track account statuses and collaborate on processes. The database is a link between Flow and PowerShell.
 

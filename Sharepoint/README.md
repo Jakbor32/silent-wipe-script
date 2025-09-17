@@ -16,11 +16,12 @@ Choose "Start from blank" to customize the list structure.
 ![Selecting 'Start from blank' when creating a list](start_from_blank.png)  
 Add columns to the list to capture all required information, such as emails, status look bellow
 
-| List Name | Columns       |
-| --------- | ------------- |
-| Users     | email, status |
-| Whitelist | email         |
-| Logs      | log           |
+| List Name | Columns       | Format    |
+|-----------|---------------|-----------|
+| Users     | email, status | text, text |
+| Whitelist | email         | text      |
+| Logs      | log           | text      |
+
 
 ![Adding a new column to the list](new_column.png)
 
