@@ -73,6 +73,12 @@ In this project, SharePoint serves as a central platform for storing and managin
 
 [Go to Sharepoint configuration](Sharepoint/README.md)
 
+# Power Automate Configuration
+
+Power Automate is used here to extend automation beyond PowerShell by enabling approvals, and additional workflow steps. It connects connectors from SharePoint, Azure.
+
+[Go to Power Automate configuration](<Power Automate/README.md>)
+
 ### Plan
 
 1. ~~Description of what it is used for + presentation of how it works~~
@@ -81,7 +87,7 @@ In this project, SharePoint serves as a central platform for storing and managin
 4. ~~Sharepoint site and list configuration + connection with Powershell~~
 5. ~~Active Directory - connection with Powershell~~
 6. Logs – log descriptions
-7. Power Automate – connection to SharePoint + Azure
+7. ~~Power Automate – connection to SharePoint + Azure~~
 8. ~~NAS backup – configuration of automatic backup for users in the group~~
 9. ~~Azure - creating a group + registering a SharePoint application for PowerShell~~
 10. Possible paths for further development
