@@ -95,8 +95,7 @@ function Write-Log($msg, [switch]$ErrorLog) {
 }
 
 # ================= CONNECTIONS =====================
-try
- {
+try {
     Connect-MgGraph -ClientId $clientId -TenantId $tenantId -CertificateThumbprint $certThumbprint
 
     Write-Log "Connected to Microsoft Graph using certificate"
@@ -111,6 +110,40 @@ try {
 }
 catch {
     Write-Log "Failed to connect to SharePoint: $_" -ErrorLog
+}
+# ================= HELPERS =====================
+function Get-LastInteractiveSignInUtc {
+    param([string]$Upn, [datetime]$FromUtc)
+    try {
+        $from = $FromUtc.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        $r = Get-MgAuditLogSignIn -Filter "userPrincipalName eq '$Upn' and createdDateTime ge $from" -Top 1 -ErrorAction Stop
+        if ($r) { return ($r | Sort-Object createdDateTime -Descending | Select-Object -First 1).createdDateTime }
+        else { return $null }
+    }
+    catch {
+        Write-Log "Interactive sign-ins query failed for $Upn : $_" -ErrorLog
+        return $null
+    }
+}
+
+function Get-LastNonInteractiveSignInUtc {
+    param([string]$Upn, [datetime]$FromUtc)
+    try {
+        $from = $FromUtc.ToString("yyyy-MM-ddTHH:mm:ssZ")
+        $filter = "(userPrincipalName eq '$Upn' and createdDateTime ge $from) and signInEventTypes/any(t: t eq 'nonInteractiveUser')"
+        $enc = [System.Uri]::EscapeDataString($filter)
+        # Direct API link is used because signInEventTypes filter exists only in Graph beta and has no native cmdlet.
+        $url = "https://graph.microsoft.com/beta/auditLogs/signIns?`$filter=$enc&`$top=1&`$orderby=createdDateTime desc"
+        $res = Invoke-MgGraphRequest -Method GET -Uri $url -OutputType PSObject -ErrorAction Stop
+        if ($res.value -and $res.value.Count -gt 0) {
+            return [datetime]$res.value[0].createdDateTime
+        }
+        else { return $null }
+    }
+    catch {
+        Write-Log "Beta non-interactive query failed for $Upn : $_" -ErrorLog
+        return $null
+    }
 }
 
 ## ====================== USER REMOVAL - sharepoint ==============================
@@ -225,7 +258,7 @@ Write-Log "Loaded whitelist from SharePoint ($($whitelist.Count) records)"
 # ================= RETRIEVING AND ITERATING =====================
 $users = Get-MgUser -All -Property AccountEnabled, Mail, UserPrincipalName
 $newInactiveCount = 0
-
+$windowStartUtc = (Get-Date).ToUniversalTime().AddDays(-$daysInactive)
 
 foreach ($user in $users) {
     $mail = $user.Mail
@@ -246,47 +279,37 @@ foreach ($user in $users) {
         Write-Log "Skipped whitelist: $mailLower"
         continue
     }
-
-    # Check if user is already on the SharePoint 'Users' list
-    $existingItem = $existingUsers | Where-Object { $_["email"].ToLower() -eq $mailLower } | Select-Object -First 1
+        # Check if user is already on the SharePoint 'Users' list
+      $existingItem = $existingUsers | Where-Object { $_["email"].ToLower() -eq $mailLower } | Select-Object -First 1
     if ($existingItem) {
         Write-Log "User already exists on the Users list: $mailLower"
         continue
     }
 
-    # Logins check
-    try {
-        $signIns = Get-MgAuditLogSignIn -Filter "userPrincipalName eq '$upn'" -Top 10 -ErrorAction Stop
-    }
-    catch {
-        Write-Log "Failed to retrieve sign-ins for $mailLower - $_" -ErrorLog
-        continue
-    }
+    # 1) Interactive
+    $lastInteractive = Get-LastInteractiveSignInUtc -Upn $upn -FromUtc $windowStartUtc
+    $lastNonInteractive = $null
 
-    $isInactive = $false
-    if (-not $signIns -or $signIns.Count -eq 0) {
-        $isInactive = $true
+    if (-not $lastInteractive) {
+        # 2) Fallback - non-interactive
+        $lastNonInteractive = Get-LastNonInteractiveSignInUtc -Upn $upn -FromUtc $windowStartUtc
     }
-    else {
-        $lastSignInDate = $signIns | Sort-Object CreatedDateTime -Descending | Select-Object -First 1 | Select-Object -ExpandProperty CreatedDateTime
-        if ($lastSignInDate -lt (Get-Date).AddDays(-$daysInactive)) { $isInactive = $true }
-    }
-
-    if ($isInactive) {
-        try {
-            Add-PnPListItem -List "Users" -Values @{ "email" = $mailLower; "status" = "pending" }
-            Write-Log "Added to SharePoint Users: $mailLower (pending)"
-            $newInactiveCount++
-        }
-        catch {
-            Write-Log "Error adding $mailLower to SharePoint: $_" -ErrorLog
-        }
-    }
-    else {
-        Write-Log "Active: $mailLower"
-    }
+    if ($lastInteractive) {
+    Write-Log "Active (interactive, last: $lastInteractive) - $mail"
+    continue
 }
-
+elseif ($lastNonInteractive) {
+    Write-Log "Active (non-interactive, last: $lastNonInteractive) - $mail"
+    continue
+}
+else {
+    try {
+        Add-PnPListItem -List "Users" -Values @{ "email" = $mail.ToLower(); "status" = "pending" }
+        Write-Log "Added to SharePoint Users: $mail (pending)"
+        $newInactiveCount++
+    } catch { Write-Log "Error adding $mail - $_" -ErrorLog }
+}
+}
 
 # ============ FINAL LOGGING =====================
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
